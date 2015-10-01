@@ -14,7 +14,7 @@
 # limitations under the License.
 ##########################GO-LICENSE-END##################################
 
-require File.expand_path(File.dirname(__FILE__) + '/../spec_helper')
+require 'spec_helper'
 
 describe AgentsController do
 
@@ -27,7 +27,7 @@ describe AgentsController do
 
     before(:all) do
       config = ConfigMigrator.migrate(ConfigFileFixture::WITH_VARITY_OF_AGENTS)
-      cachedGoConfig = Spring.bean("cachedGoConfig")
+      cachedGoConfig = Spring.bean("cachedFileGoConfig")
       cachedGoConfig.save(config, false)
     end
 

@@ -18,4 +18,8 @@ java.lang.Enum.class_eval do
   def as_json(options)
     to_s
   end
+
+  def inspect
+    to_s
+  end
 end

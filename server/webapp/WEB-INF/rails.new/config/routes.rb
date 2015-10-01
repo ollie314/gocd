@@ -15,7 +15,8 @@
 ##########################GO-LICENSE-END##################################
 
 Go::Application.routes.draw do
-  mount JasmineRails::Engine => '/jasmine-specs' if defined?(JasmineRails)
+  mount JasmineRails::Engine => '/jasmine-specs', as: :jasmine_old if defined?(JasmineRails)
+  mount JasmineRails::Engine => '/jasmine-specs-new', as: :jasmine_new if defined?(JasmineRails)
 
   unless defined?(CONSTANTS)
     USER_NAME_FORMAT = GROUP_NAME_FORMAT = TEMPLATE_NAME_FORMAT = PIPELINE_NAME_FORMAT = STAGE_NAME_FORMAT = ENVIRONMENT_NAME_FORMAT = /[\w\-][\w\-.]*/
@@ -176,7 +177,6 @@ Go::Application.routes.draw do
   end
 
   get "pipelines(.:format)" => 'pipelines#index', defaults: {:format => "html"}, as: :pipeline_dashboard
-  get "dashboard.json" => 'pipelines#dashboard', format: 'json'
   get 'home' => 'home#index'
 
   get "pipelines/value_stream_map/:pipeline_name/:pipeline_counter(.:format)" => "value_stream_map#show", constraints: {:pipeline_name => PIPELINE_NAME_FORMAT, :pipeline_counter => PIPELINE_COUNTER_FORMAT}, defaults: {:format => :html}, as: :vsm_show
@@ -220,7 +220,7 @@ Go::Application.routes.draw do
     api_version(:module => 'ApiV1', header: {name: 'Accept', value: 'application/vnd.go.cd.v1+json'}) do
       resources :backups, only: [:create]
 
-      resources :users,  param: :login_name, only: [:index, :show, :destroy] do
+      resources :users, param: :login_name, only: [:index, :show, :destroy], constraints: { login_name: USER_NAME_FORMAT } do
         patch :update, on: :member
       end
 
@@ -231,8 +231,25 @@ Go::Application.routes.draw do
       get 'stages/:pipeline_name/:pipeline_counter/:stage_name/:stage_counter' => 'stages#show', constraints: {pipeline_name: PIPELINE_NAME_FORMAT, pipeline_counter: PIPELINE_COUNTER_FORMAT, stage_name: STAGE_NAME_FORMAT, stage_counter: STAGE_COUNTER_FORMAT}, as: :stage_instance_by_counter_api
       get 'stages/:pipeline_name/:stage_name' => 'stages#history', constraints: {pipeline_name: PIPELINE_NAME_FORMAT, stage_name: STAGE_NAME_FORMAT}, as: :stage_history_api
 
+      get 'dashboard', controller: :dashboard, action: :dashboard, as: :show_dashboard
+
       match '*url', via: :all, to: 'errors#not_found'
     end
+  end
+
+  scope :api, as: :apiv2 do
+    api_version(:module => 'ApiV2', header: {name: 'Accept', value: 'application/vnd.go.cd.v2+json'}) do
+      resources :agents, param: :uuid, except: [:new, :create, :edit, :update] do
+        patch :update, on: :member
+      end
+
+      match '*url', via: :all, to: 'errors#not_found'
+    end
+  end
+
+
+  namespace :admin do
+    resources :pipelines, only: [:edit], controller: :pipeline_configs, param: :pipeline_name, as: :pipeline_config
   end
 
   namespace :api, as: "" do
@@ -318,6 +335,14 @@ Go::Application.routes.draw do
         #job api's
         get 'jobs/scheduled.xml' => 'jobs#scheduled'
         get 'jobs/:id.xml' => 'jobs#index'
+      end
+    end
+  end
+
+  namespace :api do
+    scope :config do
+      namespace :internal do
+        post 'pluggable_task/:plugin_id' => 'pluggable_task#validate', as: :pluggable_task_validation, constraints: { plugin_id: /[\w+\.\-]+/ }
       end
     end
   end
