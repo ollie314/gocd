@@ -1,5 +1,5 @@
-/*************************GO-LICENSE-START*********************************
- * Copyright 2014 ThoughtWorks, Inc.
+/*
+ * Copyright 2016 ThoughtWorks, Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -12,55 +12,55 @@
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
  * limitations under the License.
- *************************GO-LICENSE-END***********************************/
+ */
+
 package com.thoughtworks.go.config;
 
 import com.thoughtworks.go.config.materials.ScmMaterialConfig;
 import com.thoughtworks.go.config.materials.git.GitMaterialConfig;
 import com.thoughtworks.go.config.remote.*;
+import com.thoughtworks.go.domain.config.Configuration;
 import com.thoughtworks.go.helper.PartialConfigMother;
-import com.thoughtworks.go.server.materials.ScmMaterialCheckoutService;
+import com.thoughtworks.go.serverhealth.*;
 import org.hamcrest.core.Is;
+import org.junit.Assert;
 import org.junit.Before;
 import org.junit.Test;
 
 import java.io.File;
 
-import static junit.framework.TestCase.assertNotNull;
-import static junit.framework.TestCase.assertNull;
-import static junit.framework.TestCase.fail;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.core.Is.is;
-import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.*;
 import static org.mockito.Mockito.*;
 
 public class GoRepoConfigDataSourceTest {
     private GoConfigPluginService configPluginService;
     private GoConfigWatchList configWatchList;
-    private ScmMaterialCheckoutService checkoutService;
     private PartialConfigProvider plugin;
 
     private GoRepoConfigDataSource repoConfigDataSource;
 
     private BasicCruiseConfig cruiseConfig ;
+    private ServerHealthService serverHealthService;
 
     File folder = new File("dir");
 
     @Before
     public void setUp()
     {
+        serverHealthService = new ServerHealthService();
         configPluginService = mock(GoConfigPluginService.class);
         plugin = mock(PartialConfigProvider.class);
         when(configPluginService.partialConfigProviderFor(any(ConfigRepoConfig.class))).thenReturn(plugin);
 
         cruiseConfig = new BasicCruiseConfig();
-        CachedFileGoConfig fileMock = mock(CachedFileGoConfig.class);
-        when(fileMock.currentConfig()).thenReturn(cruiseConfig);
+        CachedGoConfig cachedGoConfig = mock(CachedGoConfig.class);
+        when(cachedGoConfig.currentConfig()).thenReturn(cruiseConfig);
 
-        configWatchList = new GoConfigWatchList(fileMock);
-        checkoutService = mock(ScmMaterialCheckoutService.class);
+        configWatchList = new GoConfigWatchList(cachedGoConfig);
 
-        repoConfigDataSource = new GoRepoConfigDataSource(configWatchList,configPluginService,checkoutService);
+        repoConfigDataSource = new GoRepoConfigDataSource(configWatchList,configPluginService,serverHealthService);
     }
 
 
@@ -137,12 +137,16 @@ public class GoRepoConfigDataSourceTest {
         assertThat(environmentConfig.getOrigin(), Is.<ConfigOrigin>is(repoConfigOrigin));
     }
 
+
     @Test
-    public void shouldProvideParseContextWhenCallingPluginParse()
+    public void shouldProvideParseContextWhenCallingPlugin() throws Exception
     {
         ScmMaterialConfig material = new GitMaterialConfig("http://my.git");
-        cruiseConfig.setConfigRepos(new ConfigReposConfig(new ConfigRepoConfig(material,"myplugin")));
+        ConfigRepoConfig repoConfig = new ConfigRepoConfig(material, "myplugin");
+        cruiseConfig.setConfigRepos(new ConfigReposConfig(repoConfig));
         configWatchList.onConfigChange(cruiseConfig);
+
+        when(configPluginService.partialConfigProviderFor(any(ConfigRepoConfig.class))).thenReturn(plugin);
 
         repoConfigDataSource.onCheckoutComplete(material,folder,"7a8f");
 
@@ -150,7 +154,45 @@ public class GoRepoConfigDataSourceTest {
     }
 
     @Test
-    public void shouldNotCallPluginLoadOnCheckout_WhenMaterialNotInWatchList()
+    public void shouldProvideConfigurationInParseContextWhenCallingPlugin() throws Exception
+    {
+        ScmMaterialConfig material = new GitMaterialConfig("http://my.git");
+        ConfigRepoConfig repoConfig = new ConfigRepoConfig(material, "myplugin");
+        cruiseConfig.setConfigRepos(new ConfigReposConfig(repoConfig));
+        configWatchList.onConfigChange(cruiseConfig);
+
+        repoConfig.getConfiguration().addNewConfigurationWithValue("key","value",false);
+
+        plugin = new AssertingConfigPlugin(repoConfig.getConfiguration());
+        when(configPluginService.partialConfigProviderFor(any(ConfigRepoConfig.class))).thenReturn(plugin);
+
+        repoConfigDataSource.onCheckoutComplete(material,folder,"7a8f");
+    }
+
+    private class AssertingConfigPlugin implements PartialConfigProvider
+    {
+        private Configuration configuration;
+
+        public AssertingConfigPlugin(Configuration configuration) {
+
+            this.configuration = configuration;
+        }
+
+        @Override
+        public PartialConfig load(File configRepoCheckoutDirectory, PartialConfigLoadContext context) {
+            Assert.assertThat(context.configuration(),is(configuration));
+            Assert.assertThat(context.configuration().getProperty("key").getValue(),is("value"));
+            return mock(PartialConfig.class);
+        }
+
+        @Override
+        public String displayName() {
+            return "Assert config provider";
+        }
+    }
+
+    @Test
+    public void shouldNotCallPluginLoadOnCheckout_WhenMaterialNotInWatchList() throws Exception
     {
         ScmMaterialConfig material = new GitMaterialConfig("http://my.git");
 
@@ -197,11 +239,54 @@ public class GoRepoConfigDataSourceTest {
         fail("should have thrown BrokenConfigPluginException");
     }
 
+    @Test
+    public void shouldSetErrorHealthState_AtConfigRepoScope_WhenPluginHasThrown()
+    {
+        // use broken plugin now
+        when(configPluginService.partialConfigProviderFor(any(ConfigRepoConfig.class)))
+                .thenReturn(new BrokenConfigPlugin());
+
+        ScmMaterialConfig material = new GitMaterialConfig("http://my.git");
+        ConfigRepoConfig configRepoConfig = new ConfigRepoConfig(material, "myplugin");
+        cruiseConfig.setConfigRepos(new ConfigReposConfig(configRepoConfig));
+        configWatchList.onConfigChange(cruiseConfig);
+
+        repoConfigDataSource.onCheckoutComplete(material,folder,"7a8f");
+
+        assertTrue(repoConfigDataSource.latestParseHasFailedForMaterial(material));
+
+        assertFalse(serverHealthService.filterByScope(HealthStateScope.forPartialConfigRepo(configRepoConfig)).isEmpty());
+    }
+    @Test
+    public void shouldSetOKHealthState_AtConfigRepoScope_WhenPluginHasParsed()
+    {
+        ScmMaterialConfig material = new GitMaterialConfig("http://my.git");
+        ConfigRepoConfig configRepoConfig = new ConfigRepoConfig(material, "myplugin");
+        cruiseConfig.setConfigRepos(new ConfigReposConfig(configRepoConfig));
+        configWatchList.onConfigChange(cruiseConfig);
+
+        // set error state to simulate previously failed parse
+        HealthStateScope scope = HealthStateScope.forPartialConfigRepo(configRepoConfig);
+        serverHealthService.update(ServerHealthState.error("Parse failed", "Bad config format", HealthStateType.general(scope)));
+        // verify error health
+        assertFalse(serverHealthService.filterByScope(HealthStateScope.forPartialConfigRepo(configRepoConfig)).isEmpty());
+
+        // now this should fix health
+        repoConfigDataSource.onCheckoutComplete(material,folder,"7a8f");
+
+        assertTrue(serverHealthService.filterByScope(HealthStateScope.forPartialConfigRepo(configRepoConfig)).isEmpty());
+    }
+
     private class BrokenConfigPlugin implements PartialConfigProvider
     {
         @Override
         public PartialConfig load(File configRepoCheckoutDirectory, PartialConfigLoadContext context) {
             throw new BrokenConfigPluginException();
+        }
+
+        @Override
+        public String displayName() {
+            return "Broken Test Provider";
         }
     }
 

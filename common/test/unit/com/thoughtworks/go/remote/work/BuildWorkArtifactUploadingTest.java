@@ -1,26 +1,23 @@
-/*************************GO-LICENSE-START*********************************
- * Copyright 2014 ThoughtWorks, Inc.
+/*
+ * Copyright 2016 ThoughtWorks, Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *    http://www.apache.org/licenses/LICENSE-2.0
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
  * limitations under the License.
- *************************GO-LICENSE-END***********************************/
+ */
 
 package com.thoughtworks.go.remote.work;
 
 import com.thoughtworks.go.agent.testhelpers.FakeBuildRepositoryRemote;
-import com.thoughtworks.go.config.ArtifactPlan;
-import com.thoughtworks.go.config.ArtifactPlans;
-import com.thoughtworks.go.config.ArtifactPropertiesGenerators;
-import com.thoughtworks.go.config.Resources;
+import com.thoughtworks.go.config.*;
 import com.thoughtworks.go.config.materials.svn.SvnMaterial;
 import com.thoughtworks.go.domain.*;
 import com.thoughtworks.go.domain.buildcause.BuildCause;
@@ -56,6 +53,7 @@ import java.util.List;
 import java.util.UUID;
 
 import static com.thoughtworks.go.matchers.ConsoleOutMatcher.*;
+import static com.thoughtworks.go.util.SystemUtil.currentWorkingDirectory;
 import static org.hamcrest.core.Is.is;
 import static org.hamcrest.core.IsNot.not;
 import static org.hamcrest.core.StringContains.containsString;
@@ -102,7 +100,7 @@ public class BuildWorkArtifactUploadingTest {
     @Test
     public void shouldUploadEachMatchedFile() throws Exception {
         ArtifactPlans artifactPlans = new ArtifactPlans();
-        artifactPlans.add(new ArtifactPlan(ArtifactType.file, "**/*.png", "mypic"));
+        artifactPlans.add(new ArtifactPlan("**/*.png", "mypic"));
 
         BuildAssignment buildAssigment = createAssignment(artifactPlans, new String[]{"logs/pic/fail.png", "logs/pic/pass.png", "README"});
 
@@ -110,7 +108,7 @@ public class BuildWorkArtifactUploadingTest {
         GoArtifactsManipulatorStub manipulator = new GoArtifactsManipulatorStub();
 
         AgentIdentifier agentIdentifier = new AgentIdentifier("somename", "127.0.0.1", AGENT_UUID);
-        work.doWork(agentIdentifier, new FakeBuildRepositoryRemote(), manipulator, environmentVariableContext, AgentRuntimeInfo.fromAgent(agentIdentifier, "cookie", null), packageAsRepositoryExtension, scmExtension, taskExtension);
+        work.doWork(agentIdentifier, new FakeBuildRepositoryRemote(), manipulator, environmentVariableContext, new AgentRuntimeInfo(agentIdentifier, AgentRuntimeStatus.Idle, currentWorkingDirectory(), "cookie", null, false), packageAsRepositoryExtension, scmExtension, taskExtension);
 
         List<UploadEntry> entries = manipulator.uploadEntries();
 
@@ -121,7 +119,7 @@ public class BuildWorkArtifactUploadingTest {
     @Test
     public void shouldUploadMatchedFolder() throws Exception {
         ArtifactPlans artifactPlans = new ArtifactPlans();
-        artifactPlans.add(new ArtifactPlan(ArtifactType.file, "**/*", "mypic"));
+        artifactPlans.add(new ArtifactPlan("**/*", "mypic"));
 
         BuildAssignment buildAssigment = createAssignment(artifactPlans,
                 new String[]{"logs/pic/fail.png", "logs/pic/pass.png", "README"});
@@ -131,7 +129,7 @@ public class BuildWorkArtifactUploadingTest {
 
         AgentIdentifier agentIdentifier = new AgentIdentifier("somename", "127.0.0.1", AGENT_UUID);
         work.doWork(agentIdentifier, new FakeBuildRepositoryRemote(),
-                manipulator, environmentVariableContext, AgentRuntimeInfo.fromAgent(agentIdentifier, "cookie", null), packageAsRepositoryExtension, scmExtension, taskExtension);
+                manipulator, environmentVariableContext, new AgentRuntimeInfo(agentIdentifier, AgentRuntimeStatus.Idle, currentWorkingDirectory(), "cookie", null, false), packageAsRepositoryExtension, scmExtension, taskExtension);
 
         List<UploadEntry> entries = manipulator.uploadEntries();
 
@@ -145,7 +143,7 @@ public class BuildWorkArtifactUploadingTest {
     @Test
     public void shouldNotUploadFileContainingFolderAgain() throws Exception {
         ArtifactPlans artifactPlans = new ArtifactPlans();
-        artifactPlans.add(new ArtifactPlan(ArtifactType.file, "logs/pic/*.png", "mypic"));
+        artifactPlans.add(new ArtifactPlan("logs/pic/*.png", "mypic"));
 
         BuildAssignment buildAssigment = createAssignment(artifactPlans,
                 new String[]{"logs/pic/fail.png", "logs/pic/pass.png", "README"});
@@ -155,7 +153,7 @@ public class BuildWorkArtifactUploadingTest {
 
         AgentIdentifier agentIdentifier = new AgentIdentifier("somename", "127.0.0.1", AGENT_UUID);
         work.doWork(agentIdentifier, new FakeBuildRepositoryRemote(),
-                manipulator, environmentVariableContext, AgentRuntimeInfo.fromAgent(agentIdentifier, "cookie", null), packageAsRepositoryExtension, scmExtension, taskExtension);
+                manipulator, environmentVariableContext, new AgentRuntimeInfo(agentIdentifier, AgentRuntimeStatus.Idle, currentWorkingDirectory(), "cookie", null, false), packageAsRepositoryExtension, scmExtension, taskExtension);
 
         List<UploadEntry> entries = manipulator.uploadEntries();
 
@@ -167,20 +165,19 @@ public class BuildWorkArtifactUploadingTest {
     @Test
     public void shouldUploadFolderWhenMatchedWithWildCards() throws Exception {
         ArtifactPlans artifactPlans = new ArtifactPlans();
-        artifactPlans.add(new ArtifactPlan(ArtifactType.file, "logs/pic-*", "mypic"));
+        artifactPlans.add(new ArtifactPlan("logs/pic-*", "mypic"));
 
         BuildAssignment buildAssigment = createAssignment(artifactPlans,
                 new String[]{"logs/pic-1/fail.png", "logs/pic-1/pass.png", "logs/pic-2/cancel.png", "logs/pic-2/complete.png", "README"});
-    
+
         BuildWork work = new BuildWork(buildAssigment);
         GoArtifactsManipulatorStub manipulator = new GoArtifactsManipulatorStub();
 
         AgentIdentifier agentIdentifier = new AgentIdentifier("somename", "127.0.0.1", AGENT_UUID);
         work.doWork(agentIdentifier, new FakeBuildRepositoryRemote(),
-                manipulator, environmentVariableContext, AgentRuntimeInfo.fromAgent(agentIdentifier, "cookie", null), packageAsRepositoryExtension, scmExtension, taskExtension);
+                manipulator, environmentVariableContext, new AgentRuntimeInfo(agentIdentifier, AgentRuntimeStatus.Idle, currentWorkingDirectory(), "cookie", null, false), packageAsRepositoryExtension, scmExtension, taskExtension);
 
         List<UploadEntry> entries = manipulator.uploadEntries();
-        System.out.println(entries);
 
         assertThat(entries, not(uploadFileToDestination(new File(buildWorkingDirectory.getPath()+ "/logs/pic-1/pass.png"), "mypic")));
         assertThat(entries, not(uploadFileToDestination(new File(buildWorkingDirectory.getPath()+ "/logs/pic-1/fail.png"), "mypic")));
@@ -193,7 +190,7 @@ public class BuildWorkArtifactUploadingTest {
     @Test
     public void shouldUploadFolderWhenDirectMatch() throws Exception {
         ArtifactPlans artifactPlans = new ArtifactPlans();
-        artifactPlans.add(new ArtifactPlan(ArtifactType.file, "logs/pic-1", "mypic"));
+        artifactPlans.add(new ArtifactPlan("logs/pic-1", "mypic"));
 
         BuildAssignment buildAssigment = createAssignment(artifactPlans,
                 new String[]{"logs/pic-1/fail.png", "logs/pic-1/pass.png", "logs/pic-2/cancel.png", "logs/pic-2/complete.png", "README"});
@@ -203,7 +200,7 @@ public class BuildWorkArtifactUploadingTest {
 
         AgentIdentifier agentIdentifier = new AgentIdentifier("somename", "127.0.0.1", AGENT_UUID);
         work.doWork(agentIdentifier, new FakeBuildRepositoryRemote(),
-                manipulator, environmentVariableContext, AgentRuntimeInfo.fromAgent(agentIdentifier, "cookie", null), packageAsRepositoryExtension, scmExtension, taskExtension);
+                manipulator, environmentVariableContext, new AgentRuntimeInfo(agentIdentifier, AgentRuntimeStatus.Idle, currentWorkingDirectory(), "cookie", null, false), packageAsRepositoryExtension, scmExtension, taskExtension);
 
         List<UploadEntry> entries = manipulator.uploadEntries();
 
@@ -213,7 +210,7 @@ public class BuildWorkArtifactUploadingTest {
     @Test
     public void shouldUploadFolderWhenTrimedPathDirectMatch() throws Exception {
         ArtifactPlans artifactPlans = new ArtifactPlans();
-        artifactPlans.add(new ArtifactPlan(ArtifactType.file, "logs/pic-1 ", "mypic"));
+        artifactPlans.add(new ArtifactPlan("logs/pic-1 ", "mypic"));
 
         BuildAssignment buildAssigment = createAssignment(artifactPlans,
                 new String[]{"logs/pic-1/fail.png", "logs/pic-1/pass.png", "logs/pic-2/cancel.png", "logs/pic-2/complete.png", "README"});
@@ -223,7 +220,7 @@ public class BuildWorkArtifactUploadingTest {
 
         AgentIdentifier agentIdentifier = new AgentIdentifier("somename", "127.0.0.1", AGENT_UUID);
         work.doWork(agentIdentifier, new FakeBuildRepositoryRemote(),
-                manipulator, environmentVariableContext, AgentRuntimeInfo.fromAgent(agentIdentifier, "cookie", null), packageAsRepositoryExtension, scmExtension, taskExtension);
+                manipulator, environmentVariableContext, new AgentRuntimeInfo(agentIdentifier, AgentRuntimeStatus.Idle, currentWorkingDirectory(), "cookie", null, false), packageAsRepositoryExtension, scmExtension, taskExtension);
 
         List<UploadEntry> entries = manipulator.uploadEntries();
 
@@ -233,7 +230,7 @@ public class BuildWorkArtifactUploadingTest {
     @Test
     public void shouldFailBuildWhenNothingMatched() throws Exception {
         ArtifactPlans artifactPlans = new ArtifactPlans();
-        artifactPlans.add(new ArtifactPlan(ArtifactType.file, "logs/picture", "mypic"));
+        artifactPlans.add(new ArtifactPlan("logs/picture", "mypic"));
 
         BuildAssignment buildAssigment = createAssignment(artifactPlans,
                 new String[]{"logs/pic-1/fail.png", "logs/pic-1/pass.png", "logs/pic-2/cancel.png", "logs/pic-2/complete.png", "README"});
@@ -243,7 +240,7 @@ public class BuildWorkArtifactUploadingTest {
         BuildRepositoryRemoteStub repository = new BuildRepositoryRemoteStub();
 
         AgentIdentifier agentIdentifier = new AgentIdentifier("somename", "127.0.0.1", AGENT_UUID);
-        work.doWork(agentIdentifier, repository, manipulator, environmentVariableContext, AgentRuntimeInfo.fromAgent(agentIdentifier, "cookie", null), packageAsRepositoryExtension, scmExtension, taskExtension);
+        work.doWork(agentIdentifier, repository, manipulator, environmentVariableContext, new AgentRuntimeInfo(agentIdentifier, AgentRuntimeStatus.Idle, currentWorkingDirectory(), "cookie", null, false), packageAsRepositoryExtension, scmExtension, taskExtension);
 
         List<UploadEntry> entries = manipulator.uploadEntries();
 
@@ -257,7 +254,7 @@ public class BuildWorkArtifactUploadingTest {
     @Test
     public void shouldFailBuildWhenSourceDirectoryDoesNotExist() throws Exception {
         ArtifactPlans artifactPlans = new ArtifactPlans();
-        artifactPlans.add(new ArtifactPlan(ArtifactType.file, "not-Exist-Folder", "mypic"));
+        artifactPlans.add(new ArtifactPlan("not-Exist-Folder", "mypic"));
 
         BuildAssignment buildAssigment = createAssignment(artifactPlans,
                 new String[]{"logs/pic-1/fail.png", "logs/pic-1/pass.png", "logs/pic-2/cancel.png", "logs/pic-2/complete.png", "README"});
@@ -267,7 +264,7 @@ public class BuildWorkArtifactUploadingTest {
         BuildRepositoryRemoteStub repository = new BuildRepositoryRemoteStub();
 
         AgentIdentifier agentIdentifier = new AgentIdentifier("somename", "127.0.0.1", AGENT_UUID);
-        work.doWork(agentIdentifier, repository, manipulator, environmentVariableContext, AgentRuntimeInfo.fromAgent(agentIdentifier, "cookie", null), packageAsRepositoryExtension, scmExtension, taskExtension);
+        work.doWork(agentIdentifier, repository, manipulator, environmentVariableContext, new AgentRuntimeInfo(agentIdentifier, AgentRuntimeStatus.Idle, currentWorkingDirectory(), "cookie", null, false), packageAsRepositoryExtension, scmExtension, taskExtension);
 
         List<UploadEntry> entries = manipulator.uploadEntries();
 
@@ -281,7 +278,7 @@ public class BuildWorkArtifactUploadingTest {
     @Test
     public void shouldFailBuildWhenNothingMatchedUsingMatcherStartDotStart() throws Exception {
         ArtifactPlans artifactPlans = new ArtifactPlans();
-        artifactPlans.add(new ArtifactPlan(ArtifactType.file, "target/pkg/*.*", "MYDEST"));
+        artifactPlans.add(new ArtifactPlan("target/pkg/*.*", "MYDEST"));
 
         BuildAssignment buildAssigment = createAssignment(artifactPlans, new String[]{"target/pkg/"});
 
@@ -290,7 +287,7 @@ public class BuildWorkArtifactUploadingTest {
         BuildRepositoryRemoteStub repository = new BuildRepositoryRemoteStub();
 
         AgentIdentifier agentIdentifier = new AgentIdentifier("somename", "127.0.0.1", AGENT_UUID);
-        work.doWork(agentIdentifier, repository, manipulator, environmentVariableContext, AgentRuntimeInfo.fromAgent(agentIdentifier, "cookie", null), packageAsRepositoryExtension, scmExtension, taskExtension);
+        work.doWork(agentIdentifier, repository, manipulator, environmentVariableContext, new AgentRuntimeInfo(agentIdentifier, AgentRuntimeStatus.Idle, currentWorkingDirectory(), "cookie", null, false), packageAsRepositoryExtension, scmExtension, taskExtension);
 
         List<UploadEntry> entries = manipulator.uploadEntries();
 
@@ -305,7 +302,7 @@ public class BuildWorkArtifactUploadingTest {
     @Test
     public void shouldReportUploadFailuresWhenTheyHappen() throws Exception {
         ArtifactPlans artifactPlans = new ArtifactPlans();
-        artifactPlans.add(new ArtifactPlan(ArtifactType.file, "**/*.png", "mypic"));
+        artifactPlans.add(new ArtifactPlan("**/*.png", "mypic"));
 
         BuildAssignment buildAssigment = createAssignment(artifactPlans,
                 new String[]{"logs/pic/pass.png", "logs/pic-1/pass.png"});
@@ -316,10 +313,9 @@ public class BuildWorkArtifactUploadingTest {
 
         AgentIdentifier agentIdentifier = new AgentIdentifier("somename", "127.0.0.1", AGENT_UUID);
         work.doWork(agentIdentifier, new FakeBuildRepositoryRemote(), manipulator, environmentVariableContext,
-                AgentRuntimeInfo.fromAgent(agentIdentifier, "cookie", null), packageAsRepositoryExtension, scmExtension, taskExtension);
+                new AgentRuntimeInfo(agentIdentifier, AgentRuntimeStatus.Idle, currentWorkingDirectory(), "cookie", null, false), packageAsRepositoryExtension, scmExtension, taskExtension);
 
         List<UploadEntry> entries = manipulator.uploadEntries();
-        System.out.println(entries);
         assertThat(entries.isEmpty(), is(true));
         assertThat(manipulator.consoleOut(), containsString("Failed to upload [**/*.png]"));
     }
@@ -335,7 +331,7 @@ public class BuildWorkArtifactUploadingTest {
         BuildCause buildCause = BuildCause.createWithModifications(materialRevisions, "");
         List<Builder> builders = new ArrayList<Builder>();
         builders.add(new CreateFileBuilder(fileToCreate));
-        DefaultJobPlan plan = new DefaultJobPlan(new Resources(), artifactPlans, new ArtifactPropertiesGenerators(), -1, new JobIdentifier(PIPELINE_NAME, -2, "1", STAGE_NAME, "1", JOB_NAME));
+        DefaultJobPlan plan = new DefaultJobPlan(new Resources(), artifactPlans, new ArtifactPropertiesGenerators(), -1, new JobIdentifier(PIPELINE_NAME, -2, "1", STAGE_NAME, "1", JOB_NAME), null, new EnvironmentVariablesConfig(), new EnvironmentVariablesConfig(), null);
         return BuildAssignment.create(plan, buildCause, builders, buildWorkingDirectory);
     }
 

@@ -15,5 +15,10 @@
  *************************GO-LICENSE-END***********************************/
 package com.thoughtworks.go.config;
 
+import com.thoughtworks.go.domain.config.Configuration;
+import com.thoughtworks.go.domain.materials.MaterialConfig;
+
 public interface PartialConfigLoadContext {
+    Configuration configuration();
+    MaterialConfig configMaterial();
 }

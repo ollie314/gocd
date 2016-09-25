@@ -39,18 +39,11 @@ public class SecurityService {
     }
 
     public boolean hasViewPermissionForPipeline(Username username, String pipelineName) {
-        return hasViewPermissionForPipeline(CaseInsensitiveString.str(username.getUsername()), pipelineName);
-    }
-
-    /**
-     * @deprecated use hasViewPermissionForPipeline(Username username, String pipelineName) instead
-     */
-    public boolean hasViewPermissionForPipeline(String username, String pipelineName) {
         String groupName = goConfigService.findGroupNameByPipeline(new CaseInsensitiveString(pipelineName));
         if (groupName == null) {
             return true;
         }
-        return hasViewPermissionForGroup(username, groupName);
+        return hasViewPermissionForGroup(CaseInsensitiveString.str(username.getUsername()), groupName);
     }
 
     public boolean hasViewPermissionForGroup(String userName, String pipelineGroupName) {
@@ -150,7 +143,7 @@ public class SecurityService {
     }
 
     public boolean hasViewOrOperatePermissionForPipeline(Username username, String pipelineName) {
-        return hasViewPermissionForPipeline(CaseInsensitiveString.str(username.getUsername()), pipelineName) ||
+        return hasViewPermissionForPipeline(username, pipelineName) ||
                 hasOperatePermissionForPipeline(username.getUsername(), pipelineName);
     }
 
@@ -163,23 +156,13 @@ public class SecurityService {
     }
 
     public List<CaseInsensitiveString> viewablePipelinesFor(Username username) {
-        List<CaseInsensitiveString> pipelines = new ArrayList<CaseInsensitiveString>();
+        List<CaseInsensitiveString> pipelines = new ArrayList<>();
         for (String group : goConfigService.allGroups()) {
             if (hasViewPermissionForGroup(CaseInsensitiveString.str(username.getUsername()), group)) {
                 pipelines.addAll(goConfigService.pipelines(group));
             }
         }
         return pipelines;
-    }
-
-    public List<PipelineConfigs> viewableGroupsFor(Username username) {
-        ArrayList<PipelineConfigs> list = new ArrayList<PipelineConfigs>();
-        for (PipelineConfigs pipelineConfigs : goConfigService.getCurrentConfig().getGroups()) {
-            if (hasViewPermissionForGroup(CaseInsensitiveString.str(username.getUsername()), pipelineConfigs.getGroup())) {
-                list.add(pipelineConfigs);
-            }
-        }
-        return list;
     }
 
     public boolean isUserGroupAdmin(Username username) {
@@ -190,7 +173,7 @@ public class SecurityService {
         if (isUserAdmin(userName)) {
             return goConfigService.allGroups();
         }
-        List<String> modifiableGroups = new ArrayList<String>();
+        List<String> modifiableGroups = new ArrayList<>();
         for (String group : goConfigService.allGroups()) {
             if (isUserAdminOfGroup(userName.getUsername(), group)) {
                 modifiableGroups.add(group);

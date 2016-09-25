@@ -19,9 +19,12 @@ import com.thoughtworks.go.config.remote.ConfigRepoConfig;
 import com.thoughtworks.go.config.remote.ConfigReposConfig;
 import com.thoughtworks.go.config.remote.PartialConfig;
 import com.thoughtworks.go.config.remote.RepoConfigOrigin;
+import com.thoughtworks.go.domain.config.Configuration;
 import com.thoughtworks.go.domain.materials.MaterialConfig;
-import com.thoughtworks.go.server.materials.ScmMaterialCheckoutListener;
-import com.thoughtworks.go.server.materials.ScmMaterialCheckoutService;
+import com.thoughtworks.go.serverhealth.HealthStateScope;
+import com.thoughtworks.go.serverhealth.HealthStateType;
+import com.thoughtworks.go.serverhealth.ServerHealthService;
+import com.thoughtworks.go.serverhealth.ServerHealthState;
 import org.apache.log4j.Logger;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
@@ -32,31 +35,28 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
-import static com.thoughtworks.go.util.ExceptionUtils.bomb;
-
 /**
  * Parses partial configurations and exposes latest configurations as soon as possible.
  */
 @Component
-public class GoRepoConfigDataSource implements ChangedRepoConfigWatchListListener, ScmMaterialCheckoutListener {
+public class GoRepoConfigDataSource implements ChangedRepoConfigWatchListListener {
     private static final Logger LOGGER = Logger.getLogger(GoRepoConfigDataSource.class);
 
     private GoConfigPluginService configPluginService;
     private GoConfigWatchList configWatchList;
-    private ScmMaterialCheckoutService checkoutService;
+    private final ServerHealthService serverHealthService;
 
     // value is partial config instance or last exception
-    private Map<String,PartialConfigParseResult> fingerprintOfPartialToLatestParseResultMap = new ConcurrentHashMap<String,PartialConfigParseResult>();
+    private Map<String,PartialConfigParseResult> fingerprintOfPartialToLatestParseResultMap = new ConcurrentHashMap<>();
 
-    private List<PartialConfigUpdateCompletedListener> listeners = new ArrayList<PartialConfigUpdateCompletedListener>();
+    private List<PartialConfigUpdateCompletedListener> listeners = new ArrayList<>();
 
     @Autowired public GoRepoConfigDataSource(GoConfigWatchList configWatchList,GoConfigPluginService configPluginService,
-                                             ScmMaterialCheckoutService checkoutService)
+                                             ServerHealthService healthService)
     {
         this.configPluginService = configPluginService;
+        this.serverHealthService = healthService;
         this.configWatchList = configWatchList;
-        this.checkoutService = checkoutService;
-        this.checkoutService.registerListener(this);
         this.configWatchList.registerListener(this);
     }
 
@@ -100,7 +100,6 @@ public class GoRepoConfigDataSource implements ChangedRepoConfigWatchListListene
         }
     }
 
-    @Override
     public void onCheckoutComplete(MaterialConfig material, File folder, String revision) {
         // called when pipelines/flyweight/[flyweight] has a clean checkout of latest material
 
@@ -119,54 +118,60 @@ public class GoRepoConfigDataSource implements ChangedRepoConfigWatchListListene
         {
             PartialConfigProvider plugin = null;
             ConfigRepoConfig repoConfig = configWatchList.getConfigRepoForMaterial(material);
+            HealthStateScope scope = HealthStateScope.forPartialConfigRepo(repoConfig);
             try {
                 plugin = this.configPluginService.partialConfigProviderFor(repoConfig);
             }
             catch (Exception ex)
             {
-                // TODO make sure this is clearly shown to user
-                fingerprintOfPartialToLatestParseResultMap.put(fingerprint, new PartialConfigParseResult(ex));
+                fingerprintOfPartialToLatestParseResultMap.put(fingerprint, new PartialConfigParseResult(revision,ex));
                 LOGGER.error(String.format("Failed to get config plugin for %s",
                         material.getDisplayName()));
+                String message = String.format("Failed to obtain configuration plugin '%s' for material: %s",
+                        repoConfig.getConfigProviderPluginName(), material.getLongDescription());
+                String errorDescription = ex.getMessage() == null ? ex.toString()
+                        : ex.getMessage();
+                serverHealthService.update(ServerHealthState.error(message, errorDescription, HealthStateType.general(scope)));
                 notifyFailureListeners(repoConfig, ex);
                 return;
             }
             try {
                 //TODO put modifications and previous partial config in context
                 // the context is just a helper for plugin.
-                PartialConfigLoadContext context = new LoadContext();
+                PartialConfigLoadContext context = new LoadContext(repoConfig);
                 PartialConfig newPart = plugin.load(folder, context);
                 if(newPart == null)
                 {
                     LOGGER.warn(String.format("Parsed configuration material %s by %s is null",
-                            material.getDisplayName(), plugin));
+                            material.getDisplayName(), plugin.displayName()));
                     newPart = new PartialConfig();
                 }
 
                 newPart.setOrigins(new RepoConfigOrigin(repoConfig,revision));
-                fingerprintOfPartialToLatestParseResultMap.put(fingerprint, new PartialConfigParseResult(newPart));
+                fingerprintOfPartialToLatestParseResultMap.put(fingerprint, new PartialConfigParseResult(revision,newPart));
+                serverHealthService.removeByScope(scope);
                 notifySuccessListeners(repoConfig, newPart);
             }
             catch (Exception ex)
             {
-                // TODO make sure this is clearly shown to user
-                fingerprintOfPartialToLatestParseResultMap.put(fingerprint, new PartialConfigParseResult(ex));
+                fingerprintOfPartialToLatestParseResultMap.put(fingerprint, new PartialConfigParseResult(revision,ex));
                 LOGGER.error(String.format("Failed to parse configuration material %s by %s",
-                        material.getDisplayName(),plugin));
+                        material.getDisplayName(),plugin.displayName()));
+                String message = String.format("Parsing configuration repository using %s failed for material: %s",
+                        plugin.displayName(), material.getLongDescription());
+                String errorDescription = ex.getMessage() == null ? ex.toString()
+                        : ex.getMessage();
+                serverHealthService.update(ServerHealthState.error(message, errorDescription, HealthStateType.general(scope)));
                 notifyFailureListeners(repoConfig, ex);
             }
         }
     }
 
     private void notifyFailureListeners(ConfigRepoConfig repoConfig, Exception ex) {
-        for(PartialConfigUpdateCompletedListener listener : this.listeners)
-        {
-            try
-            {
-                listener.onFailedPartialConfig(repoConfig,ex);
-            }
-            catch (Exception e)
-            {
+        for (PartialConfigUpdateCompletedListener listener : this.listeners) {
+            try {
+                listener.onFailedPartialConfig(repoConfig, ex);
+            } catch (Exception e) {
                 LOGGER.error(String.format("Failed to fire event 'exception while parsing partial configuration' for listener %s",
                         listener));
             }
@@ -174,33 +179,42 @@ public class GoRepoConfigDataSource implements ChangedRepoConfigWatchListListene
     }
 
     private void notifySuccessListeners(ConfigRepoConfig repoConfig, PartialConfig newPart) {
-        for(PartialConfigUpdateCompletedListener listener : this.listeners)
-        {
-            try
-            {
-                listener.onSuccessPartialConfig(repoConfig,newPart);
-            }
-            catch (Exception e)
-            {
+        for (PartialConfigUpdateCompletedListener listener : this.listeners) {
+            try {
+                listener.onSuccessPartialConfig(repoConfig, newPart);
+            } catch (Exception e) {
                 LOGGER.error(String.format("Failed to fire parsed partial configuration for listener %s",
                         listener));
             }
         }
     }
 
+    public String getRevisionAtLastAttempt(MaterialConfig material) {
+        String fingerprint = material.getFingerprint();
+        PartialConfigParseResult result = fingerprintOfPartialToLatestParseResultMap.get(fingerprint);
+        if (result == null)
+            return null;
+
+        return result.getRevision();
+    }
 
 
     private  class  PartialConfigParseResult{
+        private final String revision;
         private PartialConfig lastSuccess;
         private Exception lastFailure;
 
-        public PartialConfigParseResult(PartialConfig newPart) {
+        public PartialConfigParseResult(String revision, PartialConfig newPart)
+        {
+            this.revision = revision;
             this.lastSuccess = newPart;
         }
 
-        public PartialConfigParseResult(Exception ex) {
+        public PartialConfigParseResult(String revision,Exception ex) {
+            this.revision = revision;
             this.lastFailure = ex;
         }
+
 
         public PartialConfig getLastSuccess() {
             return lastSuccess;
@@ -217,10 +231,29 @@ public class GoRepoConfigDataSource implements ChangedRepoConfigWatchListListene
         public void setLastFailure(Exception lastFailure) {
             this.lastFailure = lastFailure;
         }
+
+        public String getRevision() {
+            return revision;
+        }
     }
 
     private class LoadContext implements PartialConfigLoadContext
     {
+        private ConfigRepoConfig repoConfig;
 
+        public LoadContext(ConfigRepoConfig repoConfig) {
+
+            this.repoConfig = repoConfig;
+        }
+
+        @Override
+        public Configuration configuration() {
+            return repoConfig.getConfiguration();
+        }
+
+        @Override
+        public MaterialConfig configMaterial() {
+            return this.repoConfig.getMaterialConfig();
+        }
     }
 }

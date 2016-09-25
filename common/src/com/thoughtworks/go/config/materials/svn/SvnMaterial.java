@@ -93,13 +93,14 @@ public class SvnMaterial extends ScmMaterial implements PasswordEncrypter, Passw
         this(config.getUrl(), config.getUserName(), config.getPassword(), config.isCheckExternals(), config.getGoCipher());
         this.autoUpdate = config.getAutoUpdate();
         this.filter = config.rawFilter();
+        this.invertFilter = config.getInvertFilter();
         this.folder = config.getFolder();
         this.name = config.getName();
     }
 
     @Override
     public MaterialConfig config() {
-        return new SvnMaterialConfig(url, userName, getPassword(), checkExternals, goCipher, autoUpdate, filter, folder, name);
+        return new SvnMaterialConfig(url, userName, getPassword(), checkExternals, goCipher, autoUpdate, filter, invertFilter, folder, name);
     }
 
     private Subversion svn() {
@@ -135,8 +136,9 @@ public class SvnMaterial extends ScmMaterial implements PasswordEncrypter, Passw
         parameters.put("checkExternals", checkExternals);
     }
 
-    public void updateTo(ProcessOutputStreamConsumer outputStreamConsumer, Revision revision, File baseDir, final SubprocessExecutionContext execCtx) {
-        File workingDir = workingdir(baseDir);
+    public void updateTo(ProcessOutputStreamConsumer outputStreamConsumer, File baseDir, RevisionContext revisionContext, final SubprocessExecutionContext execCtx) {
+        Revision revision = revisionContext.getLatestRevision();
+        File workingDir = execCtx.isServer() ? baseDir : workingdir(baseDir);
         if (LOGGER.isDebugEnabled()) {
             LOGGER.debug("Updating to revision: " + revision + " in workingdirectory " + workingDir);
         }
@@ -238,9 +240,9 @@ public class SvnMaterial extends ScmMaterial implements PasswordEncrypter, Passw
 
     @Override
     public Map<String, Object> getAttributes(boolean addSecureFields) {
-        Map<String, Object> materialMap = new HashMap<String, Object>();
+        Map<String, Object> materialMap = new HashMap<>();
         materialMap.put("type", "svn");
-        Map<String, Object> configurationMap = new HashMap<String, Object>();
+        Map<String, Object> configurationMap = new HashMap<>();
         if (addSecureFields) {
             configurationMap.put("url", url.forCommandline());
         } else {

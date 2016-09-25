@@ -19,10 +19,7 @@ package com.thoughtworks.go.helper;
 import com.thoughtworks.go.config.materials.ScmMaterialConfig;
 import com.thoughtworks.go.config.materials.mercurial.HgMaterial;
 import com.thoughtworks.go.config.materials.mercurial.HgMaterialConfig;
-import com.thoughtworks.go.domain.materials.Modification;
-import com.thoughtworks.go.domain.materials.Modifications;
-import com.thoughtworks.go.domain.materials.Revision;
-import com.thoughtworks.go.domain.materials.TestSubprocessExecutionContext;
+import com.thoughtworks.go.domain.materials.*;
 import com.thoughtworks.go.domain.materials.mercurial.HgCommand;
 import com.thoughtworks.go.util.TestFileUtil;
 import com.thoughtworks.go.util.command.CommandLine;
@@ -78,8 +75,8 @@ public class HgTestRepo extends TestRepo {
     }
 
     @Override
-    public Modification latestModification() {
-        return latestModifications().get(0);
+    public List<Modification> latestModification() {
+        return latestModifications();
     }
 
     @Override
@@ -127,18 +124,35 @@ public class HgTestRepo extends TestRepo {
     }
 
     public List<Modification> commitAndPushFile(String fileName, String comment) throws Exception {
-        File baseDir = TestFileUtil.createUniqueTempFolder("working-dir");
-        HgMaterial material = material();
-        Revision tip = latestRevision(material, baseDir, new TestSubprocessExecutionContext());
-        material.updateTo(ProcessOutputStreamConsumer.inMemoryConsumer(), tip, baseDir, new TestSubprocessExecutionContext());
+        return commitAndPushFileWithContent(fileName,comment,"");
+    }
+    public List<Modification> commitAndPushFileWithContent(String fileName, String comment,String content) throws Exception {
+        File baseDir = prepareWorkDirectory();
+        HgMaterial material = updateTo(baseDir);
 
         File file = new File(baseDir, fileName);
-        file.createNewFile();
+        FileUtils.writeStringToFile(file, content);
 
-        material.add(baseDir, ProcessOutputStreamConsumer.inMemoryConsumer(), new File(baseDir, fileName));
+        return addCommitPush(material,comment, baseDir, file);
+    }
+
+    public List<Modification> addCommitPush(HgMaterial material,String comment, File baseDir, File file) throws Exception {
+        material.add(baseDir, ProcessOutputStreamConsumer.inMemoryConsumer(), file);
         material.commit(baseDir, ProcessOutputStreamConsumer.inMemoryConsumer(), comment, "user");
         material.push(baseDir, ProcessOutputStreamConsumer.inMemoryConsumer());
         return material.latestModification(baseDir, new TestSubprocessExecutionContext());
+    }
+
+    public HgMaterial updateTo(File baseDir) {
+        HgMaterial material = material();
+        Revision tip = latestRevision(material, baseDir, new TestSubprocessExecutionContext());
+        material.updateTo(ProcessOutputStreamConsumer.inMemoryConsumer(), baseDir, new RevisionContext(tip), new TestSubprocessExecutionContext());
+        return material;
+    }
+
+    public File prepareWorkDirectory() {
+        File uniqueTempFolder = TestFileUtil.createUniqueTempFolder("working-dir");
+        return uniqueTempFolder;
     }
 
     public UrlArgument url() {

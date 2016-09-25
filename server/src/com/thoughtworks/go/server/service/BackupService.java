@@ -1,5 +1,5 @@
-/*************************GO-LICENSE-START*********************************
- * Copyright 2014 ThoughtWorks, Inc.
+/*
+ * Copyright 2016 ThoughtWorks, Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -12,7 +12,7 @@
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
  * limitations under the License.
- *************************GO-LICENSE-END***********************************/
+ */
 
 package com.thoughtworks.go.server.service;
 
@@ -49,10 +49,11 @@ import com.thoughtworks.go.util.VoidThrowingFn;
 import org.apache.commons.io.DirectoryWalker;
 import org.apache.commons.io.FileUtils;
 import org.apache.commons.io.IOUtils;
-import org.apache.log4j.Logger;
 import org.joda.time.DateTime;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
+import org.springframework.util.StopWatch;
 
 /**
  * @understands backing up db and config
@@ -60,7 +61,7 @@ import org.springframework.stereotype.Service;
 @Service
 public class BackupService implements BackupStatusProvider {
 
-    private static final Logger LOGGER = Logger.getLogger(BackupService.class);
+    private org.slf4j.Logger LOGGER = LoggerFactory.getLogger(BackupService.class);
 
     public static final String BACKUP = "backup_";
     private final DataSource dataSource;
@@ -107,6 +108,7 @@ public class BackupService implements BackupStatusProvider {
         }
         synchronized (BACKUP_MUTEX) {
             DateTime now = timeProvider.currentDateTime();
+            LOGGER.info(String.format("Backup started at %s by user '%s'", now, username.getDisplayName()));
             final File destDir = new File(backupLocation(), BACKUP + now.toString("YYYYMMdd-HHmmss"));
             if (!destDir.mkdirs()) {
                 result.badRequest(LocalizedMessage.string("BACKUP_UNSUCCESSFUL", "Could not create the backup directory."));
@@ -114,16 +116,34 @@ public class BackupService implements BackupStatusProvider {
             }
 
             try {
+                StopWatch stopWatch = new StopWatch("stop watch");
                 backupRunningSince = now;
                 backupStartedBy = username.getUsername().toString();
+                LOGGER.info("Backing up GoCD version file.");
+                stopWatch.start("GoCD version file");
                 backupVersion(destDir);
+                stopWatch.stop();
+                System.out.println(stopWatch.getLastTaskName());
+                LOGGER.info("Finished backing up {}. Took {} ms.", stopWatch.getLastTaskName(), stopWatch.getLastTaskTimeMillis());
+                LOGGER.info("Backing up config directory.");
+                stopWatch.start("config directory");
                 backupConfig(destDir);
+                stopWatch.stop();
+                LOGGER.info("Finished backing up {}. Took {} ms.", stopWatch.getLastTaskName(), stopWatch.getLastTaskTimeMillis());
+                LOGGER.info("Backing up config.git repository");
+                stopWatch.start("config.git repository");
                 configRepository.doLocked(new VoidThrowingFn<IOException>() {
                     @Override public void run() throws IOException {
                         backupConfigRepository(destDir);
                     }
                 });
+                stopWatch.stop();
+                LOGGER.info("Finished backing up {}. Took {} ms.", stopWatch.getLastTaskName(), stopWatch.getLastTaskTimeMillis());
+                LOGGER.info("Backing up the database.");
+                stopWatch.start("database");
                 backupDb(destDir);
+                stopWatch.stop();
+                LOGGER.info("Finished backing up {}. Took {} ms.", stopWatch.getLastTaskName(), stopWatch.getLastTaskTimeMillis());
                 ServerBackup serverBackup = new ServerBackup(destDir.getAbsolutePath(), now.toDate(), username.getUsername().toString());
                 serverBackupRepository.save(serverBackup);
                 mailSender.send(EmailMessageDrafter.backupSuccessfullyCompletedMessage(destDir.getAbsolutePath(), goConfigService.adminEmail(), username));
@@ -149,22 +169,14 @@ public class BackupService implements BackupStatusProvider {
 
     private void backupConfigRepository(File backupDir) throws IOException {
         File configRepoDir = systemEnvironment.getConfigRepoDir();
-        ZipOutputStream configRepoZipStream = null;
-        try {
-            configRepoZipStream = new ZipOutputStream(new BufferedOutputStream(new FileOutputStream(new File(backupDir, CONFIG_REPOSITORY_BACKUP_ZIP))));
+        try (ZipOutputStream configRepoZipStream = new ZipOutputStream(new BufferedOutputStream(new FileOutputStream(new File(backupDir, CONFIG_REPOSITORY_BACKUP_ZIP))))) {
             new DirectoryStructureWalker(configRepoDir.getAbsolutePath(), configRepoZipStream).walk();
-        } finally {
-            if (configRepoZipStream != null) {
-                configRepoZipStream.close();
-            }
         }
     }
 
     private void backupConfig(File backupDir) throws IOException {
         String configDirectory = systemEnvironment.getConfigDir();
-        ZipOutputStream configZip = null;
-        try {
-            configZip = new ZipOutputStream(new BufferedOutputStream(new FileOutputStream(new File(backupDir, CONFIG_BACKUP_ZIP))));
+        try (ZipOutputStream configZip = new ZipOutputStream(new BufferedOutputStream(new FileOutputStream(new File(backupDir, CONFIG_BACKUP_ZIP))))) {
             File cruiseConfigFile = new File(systemEnvironment.getCruiseConfigFile());
             File cipherFile = systemEnvironment.getCipherFile();
             new DirectoryStructureWalker(configDirectory, configZip, cruiseConfigFile, cipherFile).walk();
@@ -172,10 +184,6 @@ public class BackupService implements BackupStatusProvider {
             IOUtils.write(goConfigService.xml(), configZip);
             configZip.putNextEntry(new ZipEntry(cipherFile.getName()));
             IOUtils.write(new CipherProvider(systemEnvironment).getKey(), configZip);
-        } finally {
-            if (configZip != null) {
-                configZip.close();
-            }
         }
     }
 
@@ -227,7 +235,7 @@ class DirectoryStructureWalker extends DirectoryWalker {
     private final ArrayList<String> excludeFiles;
 
     public DirectoryStructureWalker(String configDirectory, ZipOutputStream zipStream, File ...excludeFiles) {
-        this.excludeFiles = new ArrayList<String>();
+        this.excludeFiles = new ArrayList<>();
         for (File excludeFile : excludeFiles) {
             this.excludeFiles.add(excludeFile.getAbsolutePath());
         }
@@ -251,14 +259,8 @@ class DirectoryStructureWalker extends DirectoryWalker {
             return;
         }
         zipStream.putNextEntry(new ZipEntry(fromRoot(file)));
-        BufferedInputStream in = null;
-        try {
-            in = new BufferedInputStream(new FileInputStream(file));
+        try (BufferedInputStream in = new BufferedInputStream(new FileInputStream(file))) {
             IOUtils.copy(in, zipStream);
-        } finally {
-            if (in != null) {
-                in.close();
-            }
         }
     }
 

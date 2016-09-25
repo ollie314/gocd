@@ -1,5 +1,5 @@
-/*************************GO-LICENSE-START*********************************
- * Copyright 2014 ThoughtWorks, Inc.
+/*
+ * Copyright 2015 ThoughtWorks, Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -12,7 +12,7 @@
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
  * limitations under the License.
- *************************GO-LICENSE-END***********************************/
+ */
 
 package com.thoughtworks.go.domain;
 
@@ -33,8 +33,6 @@ import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.mockito.internal.verification.Times;
 
-import static org.hamcrest.Matchers.is;
-import static org.junit.Assert.assertThat;
 import static org.mockito.Matchers.any;
 import static org.mockito.Matchers.eq;
 import static org.mockito.Mockito.doNothing;
@@ -62,7 +60,7 @@ public class TestArtifactPlanTest {
     @Test
     public void shouldNotThrowExceptionIfFolderNotFound() throws Exception {
         final TestArtifactPlan compositeTestArtifact = new TestArtifactPlan(
-                new ArtifactPlan(ArtifactType.unit, "some_random_path_that_does_not_exist",
+                new TestArtifactPlan("some_random_path_that_does_not_exist",
                         "testoutput"));
         compositeTestArtifact.publish(mockArtifactPublisher, rootPath);
         verify(mockArtifactPublisher).consumeLineWithPrefix("The Directory target/test/some_random_path_that_does_not_exist specified as a test artifact was not found. Please check your configuration");
@@ -73,7 +71,7 @@ public class TestArtifactPlanTest {
         final File nonFolderFileThatExists = TestFileUtil.createTestFile(TestFileUtil.createTempFolder("tempFolder"),
                 "nonFolderFileThatExists");
         final TestArtifactPlan compositeTestArtifact = new TestArtifactPlan(
-                new ArtifactPlan(ArtifactType.unit, nonFolderFileThatExists.getPath(),
+                new TestArtifactPlan(nonFolderFileThatExists.getPath(),
                         "testoutput"));
 
         compositeTestArtifact.publish(mockArtifactPublisher, rootPath);
@@ -82,7 +80,7 @@ public class TestArtifactPlanTest {
 
     @Test
     public void shouldSupportGlobPatternsInSourcePath() {
-        ArtifactPlan artifactPlan = new ArtifactPlan(ArtifactType.file,  "**/*/a.log", "logs");
+        ArtifactPlan artifactPlan = new ArtifactPlan( "**/*/a.log", "logs");
         TestArtifactPlan testArtifactPlan = new TestArtifactPlan(artifactPlan);
 
         File first = new File("target/test/report/a.log");

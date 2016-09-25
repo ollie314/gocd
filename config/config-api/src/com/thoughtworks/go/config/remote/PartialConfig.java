@@ -17,6 +17,7 @@ package com.thoughtworks.go.config.remote;
 
 
 import com.thoughtworks.go.config.*;
+import com.thoughtworks.go.config.preprocessor.SkipParameterResolution;
 import com.thoughtworks.go.domain.ConfigErrors;
 import com.thoughtworks.go.domain.PipelineGroups;
 
@@ -24,13 +25,14 @@ import com.thoughtworks.go.domain.PipelineGroups;
  * Part of cruise configuration that can be stored outside of main cruise-config.xml.
  * It can be merged with others and main configuration.
  */
+@ConfigTag("cruise")
 public class PartialConfig implements Validatable, ConfigOriginTraceable {
     // consider to include source of this part.
 
-    private ConfigOrigin origin;
+    @ConfigSubtag(label = "groups") private PipelineGroups pipelines = new PipelineGroups();
+    @ConfigSubtag @SkipParameterResolution private EnvironmentsConfig environments = new EnvironmentsConfig();
 
-    private EnvironmentsConfig environments = new EnvironmentsConfig();
-    private PipelineGroups pipelines = new PipelineGroups();
+    private ConfigOrigin origin;
 
     public PartialConfig(){
     }
@@ -43,13 +45,18 @@ public class PartialConfig implements Validatable, ConfigOriginTraceable {
     }
 
     @Override
+    public String toString() {
+        return String.format("ConfigPartial: %s pipes, %s environments; From %s",pipelines.size(),environments.size(),origin);
+    }
+
+    @Override
     public void validate(ValidationContext validationContext) {
 
     }
 
     @Override
     public ConfigErrors errors() {
-        return null;
+        return new ConfigErrors();
     }
 
     @Override
@@ -94,5 +101,33 @@ public class PartialConfig implements Validatable, ConfigOriginTraceable {
 
     public void setPipelines(PipelineGroups pipelines) {
         this.pipelines = pipelines;
+    }
+
+    /**
+     * Validate this part within its own scope.
+     */
+    public void validatePart() {
+
+    }
+
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) return true;
+        if (o == null || getClass() != o.getClass()) return false;
+
+        PartialConfig that = (PartialConfig) o;
+
+        if (!pipelines.equals(that.pipelines)) return false;
+        if (!getEnvironments().equals(that.getEnvironments())) return false;
+        return getOrigin() != null ? getOrigin().equals(that.getOrigin()) : that.getOrigin() == null;
+
+    }
+
+    @Override
+    public int hashCode() {
+        int result = pipelines.hashCode();
+        result = 31 * result + getEnvironments().hashCode();
+        result = 31 * result + (getOrigin() != null ? getOrigin().hashCode() : 0);
+        return result;
     }
 }

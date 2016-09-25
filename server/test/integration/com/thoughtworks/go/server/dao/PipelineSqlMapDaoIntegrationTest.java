@@ -48,7 +48,6 @@ import com.thoughtworks.go.domain.materials.ModifiedAction;
 import com.thoughtworks.go.domain.materials.ModifiedFile;
 import com.thoughtworks.go.domain.materials.dependency.DependencyMaterialRevision;
 import com.thoughtworks.go.helper.*;
-import com.thoughtworks.go.helper.PipelineMother;
 import com.thoughtworks.go.presentation.pipelinehistory.PipelineInstanceModel;
 import com.thoughtworks.go.presentation.pipelinehistory.PipelineInstanceModels;
 import com.thoughtworks.go.presentation.pipelinehistory.StageInstanceModel;
@@ -63,7 +62,6 @@ import com.thoughtworks.go.server.service.ScheduleService;
 import com.thoughtworks.go.server.service.ScheduleTestUtil;
 import com.thoughtworks.go.server.transaction.TransactionTemplate;
 import com.thoughtworks.go.util.*;
-import com.thoughtworks.go.util.GoConfigFileHelper;
 import org.apache.commons.lang.StringUtils;
 import org.hamcrest.BaseMatcher;
 import org.hamcrest.Description;
@@ -94,6 +92,7 @@ import static com.thoughtworks.go.helper.ModificationsMother.modifyOneFile;
 import static com.thoughtworks.go.helper.ModificationsMother.multipleModificationsInHg;
 import static com.thoughtworks.go.server.dao.PersistentObjectMatchers.hasSameId;
 import static com.thoughtworks.go.util.GoConstants.DEFAULT_APPROVED_BY;
+import static org.hamcrest.CoreMatchers.containsString;
 import static org.hamcrest.Matchers.contains;
 import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.notNullValue;
@@ -105,7 +104,6 @@ import static org.hamcrest.core.IsNot.not;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertThat;
 import static org.junit.Assert.fail;
-import static org.junit.matchers.JUnitMatchers.containsString;
 import static org.mockito.Matchers.any;
 import static org.mockito.Matchers.eq;
 import static org.mockito.Mockito.mock;
@@ -1735,19 +1733,19 @@ public class PipelineSqlMapDaoIntegrationTest {
         assertThat(pipelineIdentifiers, hasSize(1));
         assertThat(pipelineIdentifiers, hasItem(new PipelineIdentifier(p2.config.name().toString(), 1, "1")));
     }
-    
+
     @Test
-    public void shouldInvalidateCachedPipelineHistoryViaNameAndCounterUponStageChange()  throws Exception {
+    public void shouldInvalidateCachedPipelineHistoryViaNameAndCounterUponStageChangeCaseInsensitively()  throws Exception {
         GitMaterial g1 = u.wf(new GitMaterial("g1"), "folder3");
         u.checkinInOrder(g1, "g_1");
 
         ScheduleTestUtil.AddedPipeline p1 = u.saveConfigWith("p1", "s1", u.m(g1));
         Pipeline p1_1 = dbHelper.schedulePipeline(p1.config, new TestingClock(new Date()));
         dbHelper.pass(p1_1);
-        PipelineInstanceModel pim1 = pipelineDao.findPipelineHistoryByNameAndCounter(p1.config.name().toString(), 1); //prime cache
+        PipelineInstanceModel pim1 = pipelineDao.findPipelineHistoryByNameAndCounter(p1.config.name().toUpper().toString(), 1); //prime cache
         scheduleService.rerunStage(p1_1.getName(), p1_1.getCounter().toString(), p1_1.getStages().get(0).getName());
 
-        PipelineInstanceModel pim2 = pipelineDao.findPipelineHistoryByNameAndCounter(p1.config.name().toString(), 1);
+        PipelineInstanceModel pim2 = pipelineDao.findPipelineHistoryByNameAndCounter(p1.config.name().toUpper().toString(), 1);
 
         assertThat(pim2, is(not(pim1)));
         assertThat(pim2.getStageHistory().get(0).getIdentifier().getStageCounter(), is("2"));

@@ -38,6 +38,7 @@ import com.thoughtworks.go.config.materials.git.GitMaterial;
 import com.thoughtworks.go.database.Database;
 import com.thoughtworks.go.domain.materials.Modification;
 import com.thoughtworks.go.domain.materials.mercurial.StringRevision;
+import com.thoughtworks.go.domain.materials.RevisionContext;
 import com.thoughtworks.go.i18n.Localizable;
 import com.thoughtworks.go.i18n.Localizer;
 import com.thoughtworks.go.security.CipherProvider;
@@ -49,14 +50,17 @@ import com.thoughtworks.go.server.service.result.HttpLocalizedOperationResult;
 import com.thoughtworks.go.server.util.ServerVersion;
 import com.thoughtworks.go.service.ConfigRepository;
 import com.thoughtworks.go.util.*;
-import com.thoughtworks.go.util.GoConfigFileHelper;
 import com.thoughtworks.go.util.command.InMemoryStreamConsumer;
 import org.apache.commons.io.FileUtils;
 import org.apache.commons.io.FilenameUtils;
 import org.apache.commons.io.IOUtils;
 import org.apache.commons.io.filefilter.NameFileFilter;
 import org.apache.commons.io.filefilter.TrueFileFilter;
+import org.apache.log4j.Appender;
+import org.apache.log4j.Level;
+import org.apache.log4j.spi.LoggingEvent;
 import org.bouncycastle.crypto.InvalidCipherTextException;
+import org.hamcrest.Matchers;
 import org.joda.time.DateTime;
 import org.joda.time.format.DateTimeFormatter;
 import org.joda.time.format.ISODateTimeFormat;
@@ -64,15 +68,20 @@ import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
 import org.junit.runner.RunWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.invocation.InvocationOnMock;
 import org.mockito.stubbing.Answer;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.test.context.ContextConfiguration;
 import org.springframework.test.context.junit4.SpringJUnit4ClassRunner;
 
+import static com.thoughtworks.go.util.TestUtils.contains;
+import static org.apache.log4j.Logger.getRootLogger;
+import static org.hamcrest.CoreMatchers.allOf;
 import static org.hamcrest.Matchers.greaterThan;
 import static org.hamcrest.core.Is.is;
 import static org.hamcrest.core.IsNull.nullValue;
+import static org.hamcrest.core.StringContains.containsString;
 import static org.junit.Assert.assertThat;
 import static org.mockito.Matchers.any;
 import static org.mockito.Mockito.doAnswer;
@@ -114,6 +123,7 @@ public class BackupServiceIntegrationTest {
     private TempFiles tempFiles;
     private byte[] originalCipher;
     private Username admin;
+    private LogFixture logFixture;
 
     @Before
     public void setUp() throws Exception {
@@ -130,6 +140,7 @@ public class BackupServiceIntegrationTest {
 
         FileUtil.writeContentToFile("invalid crapy config", new File(systemEnvironment.getConfigDir(), "cruise-config.xml"));
         FileUtil.writeContentToFile("invalid crapy cipher", new File(systemEnvironment.getConfigDir(), "cipher"));
+        logFixture = LogFixture.startListening(Level.INFO);
     }
 
     @After
@@ -140,6 +151,7 @@ public class BackupServiceIntegrationTest {
         FileUtil.writeContentToFile(goConfigService.xml(), new File(systemEnvironment.getConfigDir(), "cruise-config.xml"));
         FileUtil.writeContentToFile(originalCipher, systemEnvironment.getCipherFile());
         configHelper.onTearDown();
+        logFixture.stopListening();
     }
 
     @Test
@@ -149,6 +161,16 @@ public class BackupServiceIntegrationTest {
         assertThat(result.isSuccessful(), is(false));
         assertThat(result.message(localizer), is("Unauthorized to initiate Go backup as you are not a Go administrator"));
     }
+
+    @Test
+    public void shouldLogBackupRelatedMessages() {
+        HttpLocalizedOperationResult result = new HttpLocalizedOperationResult();
+        backupService.startBackup(admin, result);
+        assertThat(result.isSuccessful(), is(true));
+        assertThat(logFixture.allLogs(), allOf(containsString("Backing up GoCD version file"), containsString("Backing up config directory"),
+                                        containsString(" Backing up config.git repository"), containsString("Backing up the database")));
+    }
+
 
     @Test
     public void shouldPerformConfigBackupForAllConfigFiles() throws Exception {
@@ -198,10 +220,13 @@ public class BackupServiceIntegrationTest {
         TestUtils.extractZipToDir(repoZip, repoDir);
         File cloneDir = tempFiles.createUniqueFolder("cloned-config-repo-backup");
         GitMaterial git = new GitMaterial(repoDir.getAbsolutePath());
+
         List<Modification> modifications = git.latestModification(cloneDir, subprocessExecutionContext);
         String latestChangeRev = modifications.get(0).getRevision();
+        git.checkout(cloneDir, new StringRevision(latestChangeRev), subprocessExecutionContext);
         assertThat(FileUtil.readContentFromFile(new File(cloneDir, "cruise-config.xml")).indexOf("too-unique-to-be-present"), greaterThan(0));
-        git.updateTo(new InMemoryStreamConsumer(), new StringRevision(latestChangeRev + "~1"), cloneDir, subprocessExecutionContext);
+        StringRevision revision = new StringRevision(latestChangeRev + "~1");
+        git.updateTo(new InMemoryStreamConsumer(), cloneDir, new RevisionContext(revision), subprocessExecutionContext);
         assertThat(FileUtil.readContentFromFile(new File(cloneDir, "cruise-config.xml")).indexOf("too-unique-to-be-present"), is(-1));
     }
 
