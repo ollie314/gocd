@@ -60,7 +60,7 @@ public class RemoteRegistrationRequesterTest {
         properties.put(AgentAutoRegistrationPropertiesImpl.AGENT_AUTO_REGISTER_ENVIRONMENTS, "uat, staging");
         properties.put(AgentAutoRegistrationPropertiesImpl.AGENT_AUTO_REGISTER_HOSTNAME, "agent01.example.com");
 
-        remoteRegistryRequester(url, httpClient, defaultAgentRegistry).requestRegistration("cruise.com", new AgentAutoRegistrationPropertiesImpl(null, properties));
+        remoteRegistryRequester(url, httpClient, defaultAgentRegistry, 200).requestRegistration("cruise.com", new AgentAutoRegistrationPropertiesImpl(null, properties));
         verify(httpClient).execute(argThat(hasAllParams(defaultAgentRegistry.uuid(), "", "")));
     }
 
@@ -79,7 +79,7 @@ public class RemoteRegistrationRequesterTest {
         properties.put(AgentAutoRegistrationPropertiesImpl.AGENT_AUTO_REGISTER_ELASTIC_AGENT_ID, "42");
         properties.put(AgentAutoRegistrationPropertiesImpl.AGENT_AUTO_REGISTER_ELASTIC_PLUGIN_ID, "tw.go.elastic-agent.docker");
 
-        remoteRegistryRequester(url, httpClient, defaultAgentRegistry).requestRegistration("cruise.com", new AgentAutoRegistrationPropertiesImpl(null, properties));
+        remoteRegistryRequester(url, httpClient, defaultAgentRegistry, 200).requestRegistration("cruise.com", new AgentAutoRegistrationPropertiesImpl(null, properties));
         verify(httpClient).execute(argThat(hasAllParams(defaultAgentRegistry.uuid(), "42", "tw.go.elastic-agent.docker")));
     }
 
@@ -123,10 +123,15 @@ public class RemoteRegistrationRequesterTest {
         };
     }
 
-    private SslInfrastructureService.RemoteRegistrationRequester remoteRegistryRequester(final String url, final GoAgentServerHttpClient httpClient, final DefaultAgentRegistry defaultAgentRegistry) {
+    private SslInfrastructureService.RemoteRegistrationRequester remoteRegistryRequester(final String url, final GoAgentServerHttpClient httpClient, final DefaultAgentRegistry defaultAgentRegistry, final int statusCode) {
         return new SslInfrastructureService.RemoteRegistrationRequester(url, defaultAgentRegistry, httpClient) {
             @Override
-            protected Registration readResponse(InputStream is) throws IOException, ClassNotFoundException {
+            protected int getStatusCode(CloseableHttpResponse response) {
+                return statusCode;
+            }
+
+            @Override
+            protected Registration readResponse(String responseBody) {
                 return null;
             }
         };

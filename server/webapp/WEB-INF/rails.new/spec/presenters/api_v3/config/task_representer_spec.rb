@@ -131,7 +131,7 @@ describe ApiV3::Config::Tasks::TaskRepresenter do
           attributes: { run_if: [], on_cancel: nil, command: "", working_directory: "../outside"},
           errors: {
             command: ["Command cannot be empty"],
-            working_directory: ["The path of the working directory for the custom command in job 'dev' in stage 'stage' of pipeline 'this_pipeline' is outside the agent sandbox."]
+            workingDirectory: ["The path of the working directory for the custom command in job 'dev' in stage 'stage' of pipeline 'this_pipeline' is outside the agent sandbox."]
           }
       }
     end
@@ -161,6 +161,17 @@ describe ApiV3::Config::Tasks::TaskRepresenter do
       }
     end
 
+    def default_task_hash
+      {
+        type:       'ant',
+        attributes: {
+          working_directory: '',
+          build_file:        '',
+          target:            ' '
+        }
+      }
+    end
+
     it 'should represent errors' do
       task         = AntTask.new()
       task.setWorkingDirectory("../outside")
@@ -178,12 +189,24 @@ describe ApiV3::Config::Tasks::TaskRepresenter do
       expect(errors_hash[:errors].keys.size).to eq(task.errors.size)
     end
 
+    it 'should represent the ant task attributes as null if blank' do
+      task = AntTask.new
+      ApiV3::Config::Tasks::TaskRepresenter.new(task).from_hash(default_task_hash)
+      actual_json = ApiV3::Config::Tasks::TaskRepresenter.new(task).to_hash(url_builder: UrlBuilder.new)
+      expect(task.getTarget).to eq(nil)
+      expect(task.getBuildFile).to eq(nil)
+      expect(task.workingDirectory).to eq(nil)
+      expect(actual_json).to eq({ type: 'ant',
+                                  attributes: {run_if: [], on_cancel: nil, working_directory: nil, build_file: nil, target: nil}
+                                })
+    end
+
     def errors_hash
       {
           type:       'ant',
           attributes: { run_if: [], on_cancel: nil, working_directory: "../outside", build_file: nil, target: nil},
           errors: {
-            working_directory: ["Task of job 'dev' in stage 'stage' of pipeline 'this_pipeline' has path '../outside' which is outside the working directory."]
+            workingDirectory: ["Task of job 'dev' in stage 'stage' of pipeline 'this_pipeline' has path '../outside' which is outside the working directory."]
           }
       }
     end
@@ -214,6 +237,18 @@ describe ApiV3::Config::Tasks::TaskRepresenter do
       }
     end
 
+    def default_task_hash
+      {
+        type:       'nant',
+        attributes: {
+          working_directory: '',
+          build_file:        '',
+          target:            ' ',
+          nant_path:         ''
+        }
+      }
+    end
+
     it 'should represent errors' do
       task         = NantTask.new()
       task.setWorkingDirectory("../outside")
@@ -231,12 +266,24 @@ describe ApiV3::Config::Tasks::TaskRepresenter do
       expect(errors_hash[:errors].keys.size).to eq(task.errors.size)
     end
 
+    it 'should represent the nant task attributes as null if blank' do
+      task = NantTask.new
+      ApiV3::Config::Tasks::TaskRepresenter.new(task).from_hash(default_task_hash)
+      actual_json = ApiV3::Config::Tasks::TaskRepresenter.new(task).to_hash(url_builder: UrlBuilder.new)
+      expect(task.getTarget).to eq(nil)
+      expect(task.getBuildFile).to eq(nil)
+      expect(task.workingDirectory).to eq(nil)
+      expect(actual_json).to eq({ type: 'nant',
+                                  attributes: {run_if: [], on_cancel: nil, working_directory: nil, build_file: nil, target: nil, nant_path: nil}
+                                })
+    end
+
     def errors_hash
       {
           type:       'nant',
           attributes: { run_if: [], on_cancel: nil, working_directory: "../outside", build_file: nil, target: nil, nant_path:nil},
           errors: {
-            working_directory: ["Task of job 'dev' in stage 'stage' of pipeline 'this_pipeline' has path '../outside' which is outside the working directory."]
+            workingDirectory: ["Task of job 'dev' in stage 'stage' of pipeline 'this_pipeline' has path '../outside' which is outside the working directory."]
           }
       }
     end
@@ -266,6 +313,18 @@ describe ApiV3::Config::Tasks::TaskRepresenter do
       }
     end
 
+    def default_task_hash
+      {
+        type: 'rake',
+        attributes: {
+          working_directory: '',
+          build_file: '',
+          target: ' ',
+          nant_path: ''
+        }
+      }
+    end
+
     it 'should represent errors' do
       task         = RakeTask.new()
       task.setWorkingDirectory("../outside")
@@ -283,12 +342,24 @@ describe ApiV3::Config::Tasks::TaskRepresenter do
       expect(errors_hash[:errors].keys.size).to eq(task.errors.size)
     end
 
+    it 'should represent the rake task attributes as null if not provided' do
+      task = RakeTask.new
+      ApiV3::Config::Tasks::TaskRepresenter.new(task).from_hash(default_task_hash)
+      actual_json = ApiV3::Config::Tasks::TaskRepresenter.new(task).to_hash(url_builder: UrlBuilder.new)
+      expect(task.getTarget).to eq(nil)
+      expect(task.getBuildFile).to eq(nil)
+      expect(task.workingDirectory).to eq(nil)
+      expect(actual_json).to eq({type: 'rake',
+                                 attributes: {run_if: [], on_cancel: nil, working_directory: nil, build_file: nil, target: nil}
+                                })
+    end
+
     def errors_hash
       {
           type:       'rake',
           attributes: {run_if: [], on_cancel: nil, working_directory: "../outside", build_file: nil, target: nil},
           errors: {
-            working_directory: ["Task of job 'dev' in stage 'stage' of pipeline 'this_pipeline' has path '../outside' which is outside the working directory."]
+            workingDirectory: ["Task of job 'dev' in stage 'stage' of pipeline 'this_pipeline' has path '../outside' which is outside the working directory."]
           }
 
       }
